@@ -1,5 +1,6 @@
+import { resolveSymbolQuote } from "@/adapters";
 import { ACTIVITY_SUBTYPES } from "@/lib/constants";
-import { render, screen, waitFor } from "@/test/render";
+import { act, render, screen, waitFor } from "@/test/render";
 import { zodResolver } from "@hookform/resolvers/zod";
 import userEvent from "@testing-library/user-event";
 import { FormProvider, useForm, useWatch, type Resolver } from "react-hook-form";
@@ -19,9 +20,11 @@ vi.mock("@/components/ticker-search", () => ({
 
 function OptionContractTestForm({
   defaultExpirationDate,
+  defaultUnitPrice = 5,
   onSubmit = () => undefined,
 }: {
   defaultExpirationDate?: string;
+  defaultUnitPrice?: number;
   onSubmit?: (values: BuyFormValues) => void;
 }) {
   const form = useForm<BuyFormValues>({
@@ -32,7 +35,7 @@ function OptionContractTestForm({
       assetId: "",
       activityDate: new Date("2026-09-15T00:00:00Z"),
       quantity: 1,
-      unitPrice: 5,
+      unitPrice: defaultUnitPrice,
       fee: 0,
       tax: 0,
       currency: "USD",
@@ -49,6 +52,8 @@ function OptionContractTestForm({
     name: "expirationDate",
   });
 
+  const unitPrice = useWatch({ control: form.control, name: "unitPrice" });
+
   return (
     <FormProvider {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -57,7 +62,9 @@ function OptionContractTestForm({
           strikePriceName="strikePrice"
           expirationDateName="expirationDate"
           optionTypeName="optionType"
+          unitPriceName="unitPrice"
         />
+        <output data-testid="unit-price">{unitPrice}</output>
         <output data-testid="expiration-value">{expirationDate ?? ""}</output>
         <button
           type="button"
@@ -111,7 +118,8 @@ describe("OptionContractFields", () => {
 
   it("preserves month and day when they are entered before the year", async () => {
     const user = userEvent.setup();
-    render(<OptionContractTestForm />);
+    const onSubmit = vi.fn();
+    render(<OptionContractTestForm onSubmit={onSubmit} />);
 
     const month = screen.getByRole("spinbutton", { name: /month/i });
     const day = screen.getByRole("spinbutton", { name: /day/i });
@@ -132,7 +140,7 @@ describe("OptionContractFields", () => {
     await user.keyboard("2");
     expect(month).toHaveAttribute("aria-valuenow", "12");
     expect(day).toHaveAttribute("aria-valuenow", "31");
-    expect(screen.getByTestId("expiration-value")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("expiration-value")).toHaveTextContent("0002-12-31");
 
     await user.keyboard("027");
     expect(year).toHaveAttribute("aria-valuenow", "2027");
@@ -141,9 +149,12 @@ describe("OptionContractFields", () => {
     await waitFor(() => {
       expect(screen.getByTestId("expiration-value")).toHaveTextContent("2027-12-31");
     });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(onSubmit.mock.calls[0][0].expirationDate).toBe("2027-12-31");
   });
 
-  it("does not commit an expiration year below 1000", async () => {
+  it("keeps an intermediate expiration year editable", async () => {
     const user = userEvent.setup();
     render(<OptionContractTestForm />);
 
@@ -159,10 +170,10 @@ describe("OptionContractFields", () => {
       "aria-valuenow",
       "999",
     );
-    expect(screen.getByTestId("expiration-value")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("expiration-value")).toHaveTextContent("0999-12-31");
   });
 
-  it("discards an incomplete draft when the form loads a different date", async () => {
+  it("replaces an intermediate year when the form loads a different date", async () => {
     const user = userEvent.setup();
     render(<OptionContractTestForm defaultExpirationDate="2027-12-31" />);
 
@@ -174,7 +185,7 @@ describe("OptionContractFields", () => {
         "aria-valuenow",
         "999",
       );
-      expect(screen.getByTestId("expiration-value")).toBeEmptyDOMElement();
+      expect(screen.getByTestId("expiration-value")).toHaveTextContent("0999-12-31");
     });
 
     await user.click(screen.getByRole("button", { name: "Reset expiration" }));
@@ -212,11 +223,13 @@ describe("OptionContractFields", () => {
 
     await user.click(screen.getByRole("spinbutton", { name: /year/i }));
     await user.keyboard("999");
-    expect(screen.getByTestId("expiration-value")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("expiration-value")).toHaveTextContent("0999-12-31");
 
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("Expiration date is required.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Enter a valid expiration date with a year of 1000 or later."),
+    ).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -237,5 +250,63 @@ describe("OptionContractFields", () => {
       );
       expect(screen.getByRole("spinbutton", { name: /day/i })).not.toHaveAttribute("aria-valuenow");
     });
+  });
+
+  it("clears an intermediate year when resetting to empty", async () => {
+    const user = userEvent.setup();
+    render(<OptionContractTestForm defaultExpirationDate="2027-12-31" />);
+    await user.click(screen.getByRole("spinbutton", { name: /year/i }));
+    await user.keyboard("999");
+    await user.click(screen.getByRole("button", { name: "Clear expiration" }));
+    expect(screen.getByTestId("expiration-value")).toBeEmptyDOMElement();
+    for (const name of [/year/i, /month/i, /day/i]) {
+      expect(screen.getByRole("spinbutton", { name })).not.toHaveAttribute("aria-valuenow");
+    }
+  });
+
+  it("does not resolve or summarize an intermediate expiration", async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveSymbolQuote).mockClear();
+    render(<OptionContractTestForm />);
+    await user.click(screen.getByRole("spinbutton", { name: /month/i }));
+    await user.keyboard("12");
+    await user.click(screen.getByRole("spinbutton", { name: /day/i }));
+    await user.keyboard("31");
+    await user.click(screen.getByRole("spinbutton", { name: /year/i }));
+    await user.keyboard("999");
+    expect(resolveSymbolQuote).not.toHaveBeenCalled();
+    expect(screen.queryByText("Contract", { exact: true })).not.toBeInTheDocument();
+  });
+
+  it("clears the form value when all date segments are erased", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<OptionContractTestForm defaultExpirationDate="2027-12-31" onSubmit={onSubmit} />);
+    for (const name of [/month/i, /day/i, /year/i]) {
+      await user.click(screen.getByRole("spinbutton", { name }));
+      await user.keyboard("{Backspace}{Backspace}{Backspace}{Backspace}");
+    }
+    expect(screen.getByTestId("expiration-value")).toBeEmptyDOMElement();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Expiration date is required.")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("ignores a pending quote after expiration becomes invalid", async () => {
+    const user = userEvent.setup();
+    let resolveQuote!: (quote: { price: number }) => void;
+    vi.mocked(resolveSymbolQuote).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveQuote = resolve;
+        }),
+    );
+    render(<OptionContractTestForm defaultExpirationDate="2027-12-31" defaultUnitPrice={0} />);
+    await user.click(screen.getByRole("spinbutton", { name: /year/i }));
+    await user.keyboard("999");
+    await act(async () => {
+      resolveQuote({ price: 123 });
+    });
+    expect(screen.getByTestId("unit-price")).toHaveTextContent("0");
   });
 });

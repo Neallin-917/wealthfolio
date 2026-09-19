@@ -1,3 +1,4 @@
+import { parseDate } from "@internationalized/date";
 import type { FormattingApi } from "@wealthfolio/ui";
 
 /**
@@ -12,6 +13,16 @@ export interface ParsedOccSymbol {
   expiration: string; // ISO date YYYY-MM-DD
   optionType: "CALL" | "PUT";
   strikePrice: number;
+}
+
+/** Accept complete calendar dates while preserving the existing four-digit year requirement. */
+export function isValidOptionExpiration(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  try {
+    return parseDate(value).year >= 1000;
+  } catch {
+    return false;
+  }
 }
 
 export function formatOptionExpiration(
