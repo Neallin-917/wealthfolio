@@ -31,6 +31,9 @@ describe("option expiration validation", () => {
     "",
     "0002-12-31",
     "0999-12-31",
+    "1000-01-01",
+    "1999-12-31",
+    "2100-01-01",
     "2027-02-29",
     "2028-02-30",
     "2027-13-01",
@@ -49,11 +52,14 @@ describe("option expiration validation", () => {
     }
   });
 
-  it.each(["1000-01-01", "2027-12-31", "2028-02-29"])("accepts %s", (expirationDate) => {
-    expect(isValidOptionExpiration(expirationDate)).toBe(true);
-    const values = { ...trade, expirationDate };
-    expect(buyFormSchema.safeParse(values).success).toBe(true);
-    expect(sellFormSchema.safeParse(values).success).toBe(true);
-    expect(validateTradeFields(values, t)).toBeNull();
-  });
+  it.each(["2000-01-01", "2000-02-29", "2027-12-31", "2028-02-29", "2099-12-31"])(
+    "accepts %s",
+    (expirationDate) => {
+      expect(isValidOptionExpiration(expirationDate)).toBe(true);
+      const values = { ...trade, expirationDate };
+      expect(buyFormSchema.safeParse(values).success).toBe(true);
+      expect(sellFormSchema.safeParse(values).success).toBe(true);
+      expect(validateTradeFields(values, t)).toBeNull();
+    },
+  );
 });

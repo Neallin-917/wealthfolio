@@ -13,8 +13,19 @@ vi.mock("@/adapters", () => ({
 }));
 
 vi.mock("@/components/ticker-search", () => ({
-  default: ({ value }: { value?: string }) => (
-    <input aria-label="Option underlying" value={value ?? ""} readOnly />
+  default: ({
+    value,
+    onSelectResult,
+  }: {
+    value?: string;
+    onSelectResult: (symbol: string) => void;
+  }) => (
+    <>
+      <input aria-label="Option underlying" value={value ?? ""} readOnly />
+      <button type="button" onClick={() => onSelectResult("MSFT280121P00200000")}>
+        Select option contract
+      </button>
+    </>
   ),
 }));
 
@@ -306,5 +317,80 @@ describe("OptionContractFields", () => {
       resolveQuote({ price: 123 });
     });
     expect(screen.getByTestId("unit-price")).toHaveTextContent("0");
+  });
+  it("resolves the completed date only after focus leaves the picker", async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveSymbolQuote).mockClear();
+    render(<OptionContractTestForm />);
+    await user.click(screen.getByRole("spinbutton", { name: /month/i }));
+    await user.keyboard("12");
+    await user.click(screen.getByRole("spinbutton", { name: /day/i }));
+    await user.keyboard("31");
+    await user.click(screen.getByRole("spinbutton", { name: /year/i }));
+    await user.keyboard("2027");
+    expect(screen.getByTestId("expiration-value")).toHaveTextContent("2027-12-31");
+    expect(resolveSymbolQuote).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("spinbutton", { name: /month/i }));
+    await user.keyboard("11");
+    expect(resolveSymbolQuote).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(resolveSymbolQuote).toHaveBeenCalledExactlyOnceWith(
+        "AAPL271130C00150000",
+        undefined,
+        "OPTION",
+      ),
+    );
+  });
+
+  it("resolves a date loaded by the form without requiring a manual edit", async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveSymbolQuote).mockClear();
+    render(<OptionContractTestForm />);
+    await user.click(screen.getByRole("button", { name: "Reset expiration" }));
+    await waitFor(() =>
+      expect(resolveSymbolQuote).toHaveBeenCalledExactlyOnceWith(
+        "AAPL300615C00150000",
+        undefined,
+        "OPTION",
+      ),
+    );
+  });
+  it("autofills and resolves a selected option contract", async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveSymbolQuote).mockClear();
+    render(<OptionContractTestForm />);
+    await user.click(screen.getByRole("button", { name: "Select option contract" }));
+    expect(screen.getByTestId("expiration-value")).toHaveTextContent("2028-01-21");
+    expect(screen.getByRole("spinbutton", { name: /year/i })).toHaveAttribute(
+      "aria-valuenow",
+      "2028",
+    );
+    expect(screen.getByRole("textbox", { name: "Option underlying" })).toHaveValue("MSFT");
+    await waitFor(() =>
+      expect(resolveSymbolQuote).toHaveBeenCalledExactlyOnceWith(
+        "MSFT280121P00200000",
+        undefined,
+        "OPTION",
+      ),
+    );
+  });
+
+  it("accepts a calendar selection and resolves it when editing ends", async () => {
+    const user = userEvent.setup();
+    render(<OptionContractTestForm defaultExpirationDate="2027-12-31" />);
+    vi.mocked(resolveSymbolQuote).mockClear();
+    await user.click(screen.getByRole("button", { name: /Pick a date/ }));
+    await user.click(screen.getByRole("button", { name: /December 15, 2027/ }));
+    expect(screen.getByTestId("expiration-value")).toHaveTextContent("2027-12-15");
+    expect(resolveSymbolQuote).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(resolveSymbolQuote).toHaveBeenCalledExactlyOnceWith(
+        "AAPL271215C00150000",
+        undefined,
+        "OPTION",
+      ),
+    );
   });
 });

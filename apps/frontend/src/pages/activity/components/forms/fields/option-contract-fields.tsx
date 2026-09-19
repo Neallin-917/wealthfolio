@@ -19,7 +19,7 @@ import {
 } from "@wealthfolio/ui";
 import { Input } from "@wealthfolio/ui/components/ui/input";
 import { motion } from "motion/react";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useFormContext, type FieldPath, type FieldValues } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
@@ -53,6 +53,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
   const { t } = useTranslation(["activity"]);
   const { control, setValue, getValues, watch } = useFormContext<TFieldValues>();
   const optionTypeId = useId();
+  const [isExpirationFocused, setIsExpirationFocused] = useState(false);
   const latestResolveRequestId = useRef(0);
   const needsCurrencyConfirmation = useRef(false);
   const provisionalCurrency = useRef<string | undefined>(undefined);
@@ -119,6 +120,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
   // Builds OCC symbol → resolves via provider → sets currency + pre-fills premium.
   useEffect(() => {
     latestResolveRequestId.current += 1;
+    if (isExpirationFocused) return;
     if (!underlying || !strikePrice || !isValidOptionExpiration(expirationDate) || !optionType)
       return;
     if (optionType !== "CALL" && optionType !== "PUT") return;
@@ -165,7 +167,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
         // Ignore — provisional currency from search result is already set
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [underlying, strikePrice, expirationDate, optionType]);
+  }, [underlying, strikePrice, expirationDate, optionType, isExpirationFocused]);
 
   return (
     <div className="space-y-4">
@@ -303,6 +305,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
                 <DatePickerInput
                   onChange={(date) => field.onChange(date ? formatDateISO(date) : "")}
                   onBlur={field.onBlur}
+                  onFocusChange={setIsExpirationFocused}
                   value={field.value as string | undefined}
                   disabled={field.disabled}
                 />
