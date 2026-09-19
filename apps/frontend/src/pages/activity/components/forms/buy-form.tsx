@@ -194,7 +194,7 @@ export const createBuyFormSchema = (t?: TFunction) =>
             message: msg(
               t,
               "activity:form.err_expiration_invalid",
-              "Enter a valid expiration date with a year of 1000 or later.",
+              "Enter a valid expiration date.",
             ),
             path: ["expirationDate"],
           });

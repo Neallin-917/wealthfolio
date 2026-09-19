@@ -227,9 +227,7 @@ describe("OptionContractFields", () => {
 
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(
-      await screen.findByText("Enter a valid expiration date with a year of 1000 or later."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Enter a valid expiration date.")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
